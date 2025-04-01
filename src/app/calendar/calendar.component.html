@@ -1,0 +1,73 @@
+<form [formGroup]="form" (ngSubmit)="addAppointment()">
+  <mat-form-field appearance="fill" subscriptSizing="dynamic">
+    <mat-label>Title</mat-label>
+    <input matInput formControlName="title" />
+  </mat-form-field>
+
+  <mat-form-field appearance="fill" subscriptSizing="dynamic">
+    <mat-label>Start</mat-label>
+    <input matInput type="datetime-local" formControlName="start" />
+  </mat-form-field>
+
+  <mat-form-field appearance="fill" subscriptSizing="dynamic">
+    <mat-label>Duration (minutes)</mat-label>
+    <mat-select formControlName="duration">
+      <mat-option *ngFor="let option of durationOptions" [value]="option">
+        {{ option }} minutes
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <button mat-raised-button color="primary">Add</button>
+</form>
+
+<div class="calendar">
+  <div class="header">
+    <div class="time-column"></div>
+    <div class="day" *ngFor="let day of weekDays">
+      {{ day | date : "EEE dd" }}
+    </div>
+  </div>
+  <div class="body" cdkDropListGroup>
+    <div class="row" *ngFor="let hour of hours">
+      <div class="time-column">{{ hour }}:00</div>
+      <div class="cell" *ngFor="let day of weekDays">
+        <div
+          class="cell-row"
+          *ngFor="let min of [0, 15, 30, 45]"
+          cdkDropList
+          [cdkDropListData]="{day, hour, min}"
+          (cdkDropListDropped)="drop($event)"
+        >
+          <div
+            *ngFor="let appt of getAppointmentsAt(day, hour, min)"
+            class="appointment"
+            [ngStyle]="{
+              top: ((appt.from.getMinutes() % 15) / 15) * 100 + '%',
+              height:
+                ((appt.to.getTime() - appt.from.getTime()) / (60 * 60 * 1000)) *
+                  100 *
+                  4 +
+                '%'
+            }"
+          >
+            <mat-card cdkDrag [cdkDragData]="appt" class="appointment-card">
+              <div class="appointment-content">
+                <div class="text">
+                  <div class="title">{{ appt.title }}</div>
+                  <div class="time">
+                    {{ appt.from | date : "shortTime" }} -
+                    {{ appt.to | date : "shortTime" }}
+                  </div>
+                </div>
+                <button class="delete-button" (click)="deleteAppointment(appt)">
+                  <mat-icon class="delete-icon" color="warn">delete</mat-icon>
+                </button>
+              </div>
+            </mat-card>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
