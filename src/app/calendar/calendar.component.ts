@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, OnInit, OnDestroy, Signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   ReactiveFormsModule,
@@ -13,7 +13,11 @@ import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSelectModule } from '@angular/material/select';
 import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
-import { BehaviorSubject } from 'rxjs';
+
+import { Subject, takeUntil } from 'rxjs';
+
+import { CalendarService, Appointment } from './calendar.service';
+import { getLocalDateTimeString, generateWeek } from './calendar.utils';
 
 @Component({
   selector: 'app-calendar',
@@ -32,81 +36,67 @@ import { BehaviorSubject } from 'rxjs';
     DragDropModule,
   ],
 })
-export class CalendarComponent {
+export class CalendarComponent implements OnInit, OnDestroy {
   form: FormGroup;
-  appointments$ = new BehaviorSubject<
-    { title: string; from: Date; to: Date }[]
-  >([]);
+  appointments$;
 
   weekDays: Date[] = [];
   hours = Array.from({ length: 24 }, (_, i) => i);
-
   durationOptions = [15, 30, 45, 60, 90, 120];
 
-  constructor(private fb: FormBuilder) {
+  private destroy$ = new Subject<void>();
+
+  constructor(
+    private fb: FormBuilder,
+    private calendarService: CalendarService
+  ) {
     this.form = this.fb.group({
       title: ['Hello world', Validators.required],
-      start: [this.getLocalDateTimeString(), Validators.required],
+      start: [getLocalDateTimeString(), Validators.required],
       duration: [30, Validators.required],
     });
-    this.generateWeek();
+    this.appointments$ = this.calendarService.appointments$;
   }
 
-  private getLocalDateTimeString(date = new Date()) {
-    const localDate = new Date(
-      date.getTime() - date.getTimezoneOffset() * 60000
-    );
-    return localDate.toISOString().slice(0, 16); // e.g. "2025-03-31T10:30"
-  }
+  ngOnInit(): void {
+    this.weekDays = generateWeek();
 
-  generateWeek() {
-    const today = new Date();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    this.weekDays = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      return date;
+    // Example of reactive form value change if needed later
+    this.form.valueChanges.pipe(takeUntil(this.destroy$)).subscribe((val) => {
+      // Optional: live validation or dynamic logic
+      // console.log('Form changed:', val);
     });
   }
 
-  addAppointment() {
+  addAppointment(): void {
     if (this.form.invalid) return;
+
     const { title, start, duration } = this.form.value;
     const from = new Date(start);
     const to = new Date(from.getTime() + duration * 60 * 1000);
-    this.appointments$.next([...this.appointments$.value, { title, from, to }]);
+
+    const appt: Appointment = { title, from, to };
+    this.calendarService.addAppointment(appt);
+
     this.form.reset({
       title: 'Hello world!',
-      start: this.getLocalDateTimeString(),
+      start: getLocalDateTimeString(),
       duration: 30,
     });
   }
 
-  deleteAppointment(apptToDelete: { title: string; from: Date; to: Date }) {
-    this.appointments$.next(
-      this.appointments$.value.filter((appt) => appt !== apptToDelete)
-    );
+  deleteAppointment(appt: Appointment): void {
+    this.calendarService.deleteAppointment(appt);
   }
 
-  getAppointmentsAt(day: Date, hour: number, min: number) {
-    return this.appointments$.value.filter((appt) => {
-      return (
-        appt.from.getDay() === day.getDay() &&
-        appt.from.getHours() === hour &&
-        appt.from.getMinutes() >= min &&
-        appt.from.getMinutes() < min + 15
-      );
-    });
+  getAppointmentsAt(day: Date, hour: number, min: number): Appointment[] {
+    return this.calendarService.getAppointmentsAt(day, hour, min);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  drop(event: CdkDragDrop<any>) {
-    console.log({ event });
+  drop(event: CdkDragDrop<any>): void {
+    const appointment: Appointment = event.item.data;
+    const durationMs = appointment.to.getTime() - appointment.from.getTime();
 
-    const appointment = event.item.data;
-    const durationMs =
-      new Date(appointment.to).getTime() - new Date(appointment.from).getTime();
     const newStart = new Date(event.container.data.day);
     newStart.setHours(
       event.container.data.hour,
@@ -116,9 +106,15 @@ export class CalendarComponent {
     );
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    const updated = this.appointments$.value.map((appt) =>
-      appt === appointment ? { ...appt, from: newStart, to: newEnd } : appt
-    );
-    this.appointments$.next(updated);
+    this.calendarService.updateAppointment(appointment, {
+      ...appointment,
+      from: newStart,
+      to: newEnd,
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 }
